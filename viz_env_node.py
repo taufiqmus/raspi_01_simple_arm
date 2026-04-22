@@ -105,7 +105,7 @@ class RobotGUI:
         self.current_joints = [0.0] * self.dof # Now clean Zeroes thanks to new DH!
         self.target_x, self.target_y, self.target_z = 0.0, 0.0, 0.0
         self.has_target       = False
-        self.cam_mode         = "manual"   # "manual" | "realcam" | "workspace"
+        self.cam_mode         = "realcam"  # fixed to realcam
         self.cam_detecting    = False      # True = fresh YOLO detection this cycle
         self.cam_target_locked = False    # True = controller gave us authoritative position
 
@@ -233,70 +233,23 @@ class RobotGUI:
         self.pip_canvas = tk.Canvas(right_frame, width=320, height=240, bg="#000000", highlightthickness=2, highlightbackground="#00FF00")
         self.pip_canvas.pack()
 
-        # ── Target Input Mode toggle ───────────────────────────────
-        mode_frame = ttk.LabelFrame(right_frame, text="Target Input Mode", padding=6)
+        # ── System Mode ───────────────────────────────
+        mode_frame = ttk.LabelFrame(right_frame, text="System Mode", padding=6)
         mode_frame.pack(fill='x', pady=(8, 0))
-        self.cam_mode_var = tk.StringVar(value="manual")
-        ttk.Radiobutton(mode_frame, text="Manual (Click on canvas)",
-                        variable=self.cam_mode_var, value="manual",
-                        command=self._on_mode_change).pack(anchor='w')
-        ttk.Radiobutton(mode_frame, text="Real Camera (Auto-track)",
-                        variable=self.cam_mode_var, value="realcam",
-                        command=self._on_mode_change).pack(anchor='w')
-        ttk.Radiobutton(mode_frame, text="Define Workspace Area  ✚",
-                        variable=self.cam_mode_var, value="workspace",
-                        command=self._on_mode_change).pack(anchor='w')
+        self.cam_mode_var = tk.StringVar(value="realcam")
         self.lbl_cam_status = ttk.Label(mode_frame,
-                                        text="Mode: MANUAL — click canvas to set target",
-                                        foreground="#ffff00", font=("Courier", 9))
+                                        text="Mode: REAL CAM — Auto-tracking",
+                                        foreground="#00ffcc", font=("Courier", 10, "bold"))
         self.lbl_cam_status.pack(anchor='w', pady=(2, 0))
-
-        # ── Workspace Area Panel ─────────────────────────────────────
-        ws_frame = ttk.LabelFrame(right_frame, text="Workspace Area Control", padding=6)
-        ws_frame.pack(fill='x', pady=(6, 0))
-
-        self.lbl_ws_status = ttk.Label(ws_frame,
-                                       text="⬜ Area: Not defined",
-                                       foreground="#888888", font=("Courier", 9),
-                                       wraplength=340, justify='left')
-        self.lbl_ws_status.pack(anchor='w', pady=(0, 4))
-
-        self.btn_arm = ttk.Button(ws_frame, text="ARM AUTO-TRACK",
-                                  command=self._arm_auto_track, state='disabled')
-        self.btn_arm.pack(fill='x', pady=(0, 2))
-
-        ttk.Button(ws_frame, text="CLEAR WORKSPACE",
-                   command=self._clear_workspace).pack(fill='x', pady=(0, 4))
-
-        rearm_frame = ttk.LabelFrame(ws_frame, text="Re-Arm After Pick Cycle", padding=4)
-        rearm_frame.pack(fill='x', pady=(2, 0))
-        self.rearm_mode = tk.StringVar(value="manual")
-        ttk.Radiobutton(rearm_frame, text="Manual  — click ARM again",
-                        variable=self.rearm_mode, value="manual").pack(anchor='w')
-        ttk.Radiobutton(rearm_frame, text="Auto-Loop — re-arm on IDLE",
-                        variable=self.rearm_mode, value="autoloop").pack(anchor='w')
 
         # YOLO BBox Tracker telemetry (kept below mode toggle)
         ttk.Label(right_frame, text="YOLO BBox Tracker", font=('Helvetica', 12, 'bold')).pack(pady=(8, 5))
         self.lbl_telemetry = ttk.Label(right_frame, text="X: 0.0 | Y: 0.0 | Area: 0.0", font=('Courier', 11, 'bold'), background="#1e1e1e", foreground="#00ffcc")
         self.lbl_telemetry.pack()
 
-        
-        # Task
-        task_frame = ttk.LabelFrame(right_frame, text="Manual Target (X, Y, Z) - m", padding=10)
-        task_frame.pack(fill='x', pady=20)
-        
         self.var_x = tk.StringVar(value="0.0")
         self.var_y = tk.StringVar(value="0.0")
         self.var_z = tk.StringVar(value="0.0")
-        
-        ttk.Label(task_frame, text="X:").grid(row=0, column=0)
-        ttk.Entry(task_frame, textvariable=self.var_x, width=6).grid(row=0, column=1)
-        ttk.Label(task_frame, text="Y:").grid(row=0, column=2)
-        ttk.Entry(task_frame, textvariable=self.var_y, width=6).grid(row=0, column=3)
-        ttk.Label(task_frame, text="Z (Lantai):").grid(row=0, column=4)
-        ttk.Entry(task_frame, textvariable=self.var_z, width=6, state="disabled").grid(row=0, column=5)
-        ttk.Button(task_frame, text="SEND", command=self.send_manual_target).grid(row=1, column=0, columnspan=6, pady=5, sticky='we')
 
         # Commands
         ctrl_frame = ttk.LabelFrame(right_frame, text="Commands (IBVS & General)", padding=10)
@@ -430,17 +383,7 @@ class RobotGUI:
         except ValueError:
             print("Invalid DH parameter input!")
 
-    def send_manual_target(self):
-        try:
-            self.target_x = float(self.var_x.get())
-            self.target_y = float(self.var_y.get())
-            self.target_z = float(self.var_z.get())
-            self.has_target = True
-            
-            self.node.publish_target(self.target_x, self.target_y, self.target_z)
-            self.draw_robot()
-        except ValueError:
-            print("Invalid target coordinates!")
+
 
     def toggle_limits(self):
         if self.limits_enabled.get():
@@ -448,29 +391,7 @@ class RobotGUI:
         else:
             self.node.publish_command("LIMITS_OFF")
 
-    def _on_mode_change(self):
-        self.cam_mode = self.cam_mode_var.get()
-        if self.cam_mode == "realcam":
-            self.lbl_cam_status.config(
-                text="Mode: REAL CAM — bbox auto-tracks canvas",
-                foreground="#00ffcc")
-            self.canvas_top.config(cursor="")
-        elif self.cam_mode == "workspace":
-            self.lbl_cam_status.config(
-                text="Mode: WORKSPACE — click 2 pts on Top View",
-                foreground="#FF8C00")
-            self.canvas_top.config(cursor="crosshair")
-            # Reset drawing state when re-entering mode mid-draw
-            if self.ws_mode == "drawing":
-                self.ws_mode = "idle"
-                self.ws_p1 = None
-                self.canvas_top.delete("ws_preview")
-                self._update_workspace_ui()
-        else:
-            self.lbl_cam_status.config(
-                text="Mode: MANUAL — click canvas to set target",
-                foreground="#ffff00")
-            self.canvas_top.config(cursor="")
+
 
     def ray_cast_to_floor(self, norm_x, norm_y):
         """Cast ray from camera through (norm_x, norm_y) pixel → floor Z=0.
@@ -1062,12 +983,6 @@ class RobotGUI:
                         # Arm arrived at home — restore visualization
                         self.is_homing       = False
                         self.auto_track_sent = False   # cycle complete, reset flag
-                        # Re-arm logic based on selected mode
-                        if (self.rearm_mode.get() == "autoloop"
-                                and self.ws_world_rect is not None
-                                and self.ws_mode == "defined"):
-                            self.auto_track_armed = True
-                        self._update_workspace_ui()
                     has_new = True
             except queue.Empty: pass
 
@@ -1128,14 +1043,6 @@ class RobotGUI:
                         self.var_x.set(f"{wx:.3f}")
                         self.var_y.set(f"{wy:.3f}")
                         self.var_z.set("0.000")
-                        # ── Auto-track trigger: fire START if ARMED + in workspace ──
-                        if (self.auto_track_armed
-                                and not self.auto_track_sent
-                                and self._is_in_workspace(wx, wy)):
-                            self.node.publish_command("START")
-                            self.auto_track_armed = False
-                            self.auto_track_sent  = True
-                            self._update_workspace_ui()
                 else:
                     # No detection — keep last known position, mark stale
                     self.cam_detecting = False
